@@ -6,6 +6,7 @@
         xmlns:local="clr-namespace:LEDMaster"
         mc:Ignorable="d"
         ShowInTaskbar="False"
+        WindowState="Minimized"
         Title="LED Master" Height="450" Width="800">
     <Grid Margin="6">
         <Grid.ColumnDefinitions>

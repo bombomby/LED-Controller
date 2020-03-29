@@ -100,9 +100,6 @@
     <None Include="App.config" />
   </ItemGroup>
   <ItemGroup>
-    <Resource Include="LED.ico" />
-  </ItemGroup>
-  <ItemGroup>
     <Resource Include="Icons\LED_Green.ico" />
     <Resource Include="Icons\LED_Red.ico" />
   </ItemGroup>

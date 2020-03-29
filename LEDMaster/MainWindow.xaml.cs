@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Microsoft.Win32;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -34,16 +35,68 @@ namespace LEDMaster
 
 			public ArduinoController()
 			{
+				Init();
+				Reset();
+			}
+
+			public void ClosePort()
+			{
+				if (Port != null)
+				{
+					Port.Close();
+					Port.DataReceived -= Port_DataReceived;
+					Port = null;
+				}
+			}
+
+			public void Init()
+			{
 				string[] ports = SerialPort.GetPortNames();
+
 				foreach (String p in ports)
 				{
-					Console.WriteLine("Available COM Port: {0}", p);
+					Debug.WriteLine("Available COM Port: {0}", p);
 				}
 
-				Port = new SerialPort(ports[0], BaudRage);
-				Port.Open();
+				if (Port != null)
+				{
+					Port.Close();
+					Port = null;
+				}
 
-				Reset();
+				if (ports.Length > 0)
+				{
+					String portName = ports[0];
+					try
+					{
+						Port = new SerialPort(portName, BaudRage);
+						Port.Open();
+						Port.DataReceived += Port_DataReceived;
+						MessageReceived?.Invoke(String.Format("Connected COM Port {0}!\n", portName));
+					}
+					catch (IOException ex)
+					{
+						MessageReceived?.Invoke(String.Format("Can't connect {0}: {1}\n", portName, ex.Message));
+						ClosePort();
+					}
+				}
+			}
+
+			private void Port_DataReceived(object sender, SerialDataReceivedEventArgs e)
+			{
+				SerialPort port = (SerialPort)sender;
+				string data = port.ReadExisting();
+				MessageReceived?.Invoke(data);
+			}
+
+			public bool CheckPort()
+			{
+				if (Port == null || !Port.IsOpen)
+				{
+					MessageReceived?.Invoke("Reconnecting COM Port...\n");
+					Init();
+				}
+				return Port != null && Port.IsOpen;
 			}
 
 			public void Reset()
@@ -54,7 +107,7 @@ namespace LEDMaster
 
 			private void UpdateBrightness(int value)
 			{
-				if (Port != null)
+				if (CheckPort())
 				{
 					Port.WriteLine(String.Format("b {0}", value));
 				}
@@ -62,15 +115,11 @@ namespace LEDMaster
 
 			public void UpdateFrequency(int value)
 			{
-				if (Port != null)
+				if (CheckPort())
 				{
 					Port.WriteLine(String.Format("f {0}", value));
 				}
 			}
-
-
-			//public static readonly DependencyProperty BrightnessProperty = DependencyProperty.Register("Brightness", typeof(int), typeof(ArduinoController));
-			//public static readonly DependencyProperty FrequencyProperty = DependencyProperty.Register("Frequency", typeof(int), typeof(ArduinoController));
 
 			public event PropertyChangedEventHandler PropertyChanged;
 
@@ -118,6 +167,9 @@ namespace LEDMaster
 					Port.Close();
 				}
 			}
+
+			public delegate void MessageReceivedDelegate(String messate);
+			public event MessageReceivedDelegate MessageReceived;
 		}
 
 		public ArduinoController Controller { get; set; }
@@ -133,11 +185,31 @@ namespace LEDMaster
 			StateChanged += MainWindow_StateChanged;
 
 			Controller = new ArduinoController();
-			Controller.Port.DataReceived += Port_DataReceived;
+			Controller.MessageReceived += OnMessageReceived;
 
 			DataContext = Controller;
 
 			PreviewKeyDown += MainWindow_PreviewKeyDown;
+
+			SystemEvents.PowerModeChanged += SystemEvents_PowerModeChanged; ;
+		}
+
+		private void SystemEvents_PowerModeChanged(object sender, PowerModeChangedEventArgs e)
+		{
+			switch (e.Mode)
+			{
+				case PowerModes.Resume:
+					Controller.IsEnabled = true;
+					break;
+				case PowerModes.Suspend:
+					Controller.IsEnabled = false;
+					break;
+			}
+		}
+
+		private void OnMessageReceived(String message)
+		{
+			Application.Current.Dispatcher.Invoke(new Action(() => { LogArea.Text = LogArea.Text + message; LogArea.ScrollToEnd(); }));
 		}
 
 		private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -161,12 +233,14 @@ namespace LEDMaster
 			{
 				this.Topmost = false;
 				this.ShowInTaskbar = false;
+				this.Visibility = Visibility.Hidden;
 				notifyIcon.Visible = true;
 			}
 			else
 			{
 				notifyIcon.Visible = true;
 				this.ShowInTaskbar = true;
+				this.Visibility = Visibility.Visible;
 				this.Topmost = true;
 			}
 		}
@@ -216,13 +290,6 @@ namespace LEDMaster
 		private void MainWindow_Closed(object sender, EventArgs e)
 		{
 			Controller.Dispose();
-		}
-
-		private void Port_DataReceived(object sender, SerialDataReceivedEventArgs e)
-		{
-			SerialPort port = (SerialPort)sender;
-			string data = port.ReadExisting();
-			Application.Current.Dispatcher.Invoke(new Action(() => { LogArea.Text = LogArea.Text + data; LogArea.ScrollToEnd(); }));
 		}
 
 		private void Reset_Click(object sender, RoutedEventArgs e)
